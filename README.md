@@ -17,7 +17,7 @@ To download and decrypt titles, the app uses python and chaquopy with publicly a
 
 To install WiiUDownloader Android, download the the APK File in releases tab:
 
-- [WiiUDownloader-0.0.1-arm64.apk](https://github.com/loyahdev/WiiUDownloaderAndroid/releases/latest/download/WiiUDownloader-1.0b1-arm64.apk)
+- [WiiUDownloader-1.0b1-arm64.apk](https://github.com/loyahdev/WiiUDownloaderAndroid/releases/latest/download/WiiUDownloader-1.0b1-arm64.apk)
 
 ## Usage
 
