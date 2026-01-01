@@ -12,9 +12,11 @@ import subprocess
 import re
 from urllib.request import urlopen, Request
 
+# Import the TK constant and other necessary components from FunKiiU
+TK = 0x140  # Ticket offset constant from FunKiiU
 
 # PASTE YOUR titlecert HERE (one line, no whitespace)
-titlecert = ''
+titlecert = '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'
 
 # App categories (needs to be defined at module level)
 app_categories = {
@@ -72,7 +74,7 @@ def download(url, printprogress=False, outfile=None, message_prefix='', message_
             # Print progress to console
             if printprogress:
                 percent = min(totalread * 100 / totalsize, 100) if totalsize > 0 else 0
-                print(f'\r{message_prefix} {percent:5.1f}% {totalread:10} / {totalsize:10} {message_suffix}', end='')
+                print(f'\r{message_prefix} {percent:5.1f}% {totalread:10} / {totalsize:10} bytes', end='')
                 sys.stdout.flush()
             
             # Write to file
@@ -520,7 +522,116 @@ def run_extractor(game_dir, bridge=None, token=None):
         return None
 
 
-def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None, bridge=None, token=None, auto_decrypt=True, delete_encrypted=False, auto_extract=True) -> str:
+def b64decompress(d):
+    """Decompress base64 data - from FunKiiU"""
+    return zlib.decompress(base64.b64decode(d))
+
+
+def patch_ticket_dlc(tikdata):
+    """Patch ticket for DLC content - from FunKiiU"""
+    tikdata[TK + 0x164:TK + 0x210] = b64decompress('eNpjYGQQYWBgWAPEIgwQNghoADEjELeAMTNE8D8BwEBjAABCdSH/')
+
+
+def patch_ticket_demo(tikdata):
+    """Patch ticket for demo play limit - from FunKiiU"""
+    tikdata[TK + 0x124:TK + 0x164] = bytes([0x00] * 64)
+
+
+def make_ticket(title_id, title_key, title_version, fulloutputpath, patch_demo=False, patch_dlc=False):
+    """
+    Create a ticket file - adapted from FunKiiU
+    """
+    # PASTE YOUR TIKTEM HERE (in binascii format as shown in FunKiiU)
+    TIKTEM = binascii.a2b_hex('00010004d15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000526f6f742d434130303030303030332d585330303030303030630000000000000000000000000000000000000000000000000000000000000000000000000000feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface010000cccccccccccccccccccccccccccccccc00000000000000000000000000aaaaaaaaaaaaaaaa00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010014000000ac000000140001001400000000000000280000000100000084000000840003000000000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000')
+
+    tikdata = bytearray(TIKTEM)
+    
+    # Set title version
+    tikdata[TK + 0xA6:TK + 0xA8] = title_version
+    
+    # Set title ID
+    tikdata[TK + 0x9C:TK + 0xA4] = binascii.a2b_hex(title_id)
+    
+    # Set title key
+    tikdata[TK + 0x7F:TK + 0x8F] = binascii.a2b_hex(title_key)
+    
+    # Check type for patching
+    typecheck = title_id[4:8]
+    if typecheck == '0002' and patch_demo:
+        patch_ticket_demo(tikdata)
+    elif typecheck == '000c' and patch_dlc:
+        patch_ticket_dlc(tikdata)
+    
+    # Save ticket
+    with open(fulloutputpath, 'wb') as f:
+        f.write(tikdata)
+
+
+def get_ticket_for_title(title_id, title_key, tmd_data, game_dir, patch_demo=False, patch_dlc=False, 
+                         onlinetickets=False, bridge=None, token=None):
+    """
+    Get ticket using FunKiiU logic - either download from CDN or generate
+    
+    Returns True if ticket was successfully obtained, False otherwise
+    """
+    tik_path = os.path.join(game_dir, 'title.tik')
+    
+    # Extract title version from TMD
+    title_version = tmd_data[TK + 0x9C:TK + 0x9E] if len(tmd_data) > TK + 0x9E else b'\x00\x00'
+    
+    # Determine title type
+    typecheck = title_id[4:8]
+    
+    # For updates (000e), get ticket from Nintendo CDN
+    if typecheck == '000e':
+        if bridge:
+            bridge.update(10, "Getting update ticket from Nintendo...", 0, 0, 0, 0)
+        
+        print(f"  This is an update, getting ticket from Nintendo")
+        baseurl = 'http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/' + title_id.lower()
+        try:
+            with open(tik_path, 'wb') as f:
+                download_with_retry(baseurl + '/cetk', False, f, bridge=bridge, token=token)
+            print(f"  ✓ Downloaded update ticket from Nintendo")
+            return True
+        except Exception as e:
+            print(f"  ✗ Could not download update ticket: {e}")
+            return False
+    
+    # For applications/demos/DLCs
+    if bridge:
+        bridge.update(10, "Getting ticket...", 0, 0, 0, 0)
+    
+    # If onlinetickets mode, we would download from keysite (not implemented here)
+    # Otherwise, generate ticket if we have title key
+    if title_key:
+        try:
+            print(f"  Generating ticket with title key...")
+            make_ticket(title_id.lower(), title_key, title_version, tik_path, patch_demo, patch_dlc)
+            print(f"  ✓ Generated ticket")
+            return True
+        except Exception as e:
+            print(f"  ✗ Could not generate ticket: {e}")
+            return False
+    else:
+        print(f"  ⚠ No title key available for ticket generation")
+        print(f"  ⚠ Trying to download from CDN instead...")
+        
+        # Try to download from CDN as fallback
+        baseurl = 'http://ccs.cdn.c.shop.nintendowifi.net/ccs/download/' + title_id.lower()
+        try:
+            with open(tik_path, 'wb') as f:
+                download_with_retry(baseurl + '/cetk', False, f, bridge=bridge, token=token)
+            print(f"  ✓ Downloaded ticket from CDN")
+            return True
+        except Exception as e:
+            print(f"  ✗ Could not download ticket: {e}")
+            return False
+
+
+def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None, bridge=None, token=None, 
+                       auto_decrypt=True, delete_encrypted=False, auto_extract=True, 
+                       patch_demo=True, patch_dlc=True) -> str:
     """
     Download WiiU game content from CDN with detailed progress tracking
     
@@ -533,6 +644,8 @@ def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None,
         auto_decrypt: Whether to automatically decrypt after download
         delete_encrypted: Whether to delete encrypted files after decryption
         auto_extract: Whether to automatically extract after decryption
+        patch_demo: Whether to patch demo play limit (from FunKiiU)
+        patch_dlc: Whether to patch DLC content (from FunKiiU)
     
     Returns:
         Path to the downloaded (and possibly decrypted/extracted) game directory
@@ -583,12 +696,15 @@ def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None,
         os.path.join(os.path.dirname(os.path.abspath(__file__)), 'titlekeys.json'),  # Script directory
         os.path.join(work_dir, 'titlekeys.json'),  # Work directory
         os.path.join(game_dir, 'titlekeys.json'),  # Game directory
+        os.path.join(work_dir, '..', 'titlekeys.json'),  # Parent of work directory
+        os.path.join(os.getcwd(), 'titlekeys.json'),  # Current working directory (alternative)
     ]
 
     # Try each location in order
     for path in possible_paths:
         if os.path.exists(path):
             titlekeys_file = path
+            print(f"Found titlekeys.json at: {path}")
             break
 
     # Check if we have titlekeys.json locally
@@ -596,125 +712,36 @@ def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None,
         try:
             with open(titlekeys_file, 'r') as f:
                 titlekeys_data = json.load(f)
-                title_data = next((t for t in titlekeys_data if t['titleID'] == tid), None)
+                print(f"Loaded {len(titlekeys_data)} titles from {os.path.basename(titlekeys_file)}")
+                
+                # Convert both to lowercase for case-insensitive matching
+                tid_lower = tid.lower()
+                print(f"Looking for title ID: {tid_lower}")
+                
+                title_data = next((t for t in titlekeys_data if t['titleID'].lower() == tid_lower), None)
                 if title_data:
                     title_key = title_data.get('titleKey')
                     print(f"✓ Found title key in {os.path.basename(titlekeys_file)}")
-        except:
-            print("⚠ Could not read titlekeys.json")
+                    print(f"  Title: {title_data.get('name', 'Unknown')}")
+                    print(f"  Region: {title_data.get('region', 'Unknown')}")
+                    ticket_flag = title_data.get('ticket')
+                    print(f"  Ticket flag: {ticket_flag} (type: {type(ticket_flag)})")
+                    
+                    # Debug: print the actual title key
+                    if title_key:
+                        print(f"  Title key: {title_key}")
+                    else:
+                        print(f"  ⚠ No title key found for this title")
+                else:
+                    print(f"⚠ Title ID {tid_lower} not found in {os.path.basename(titlekeys_file)}")
+        except Exception as e:
+            print(f"⚠ Could not read titlekeys.json: {e}")
+            import traceback
+            traceback.print_exc()
     else:
         print("⚠ titlekeys.json not found in any standard location")
     
-    # Download CETK/title.tik with different strategies based on title type
-    tik_path = os.path.join(game_dir, 'title.tik')
-    
-    # For system titles (not in app_categories), download from CDN
-    if tid[4:8] not in app_categories:
-        if bridge:
-            bridge.update(10, "Downloading system title ticket...", 0, 0, 0, 0)
-        
-        if not os.path.exists(tik_path):
-            try:
-                print(f"  Downloading CETK from CDN...")
-                with open(tik_path, 'wb') as f:
-                    download_with_retry(base + '/cetk', False, f, bridge=bridge, token=token)
-                print(f"  ✓ Downloaded CETK from CDN")
-            except Exception as e:
-                print(f"  ⚠ Could not download CETK from CDN: {e}")
-    
-    else:
-        # For application/demo/DLC titles
-        if bridge:
-            bridge.update(10, "Getting title ticket...", 0, 0, 0, 0)
-        
-        if not os.path.exists(tik_path):
-            if title_data and title_data.get('ticket') == 1:
-                # Download from titlekeys website (disc version)
-                try:
-                    print(f"  Downloading disc ticket from titlekeys website...")
-                    keysite = 'vault.titlekeys.ovh'
-                    request = Request(f'https://{keysite}/ticket/{tid}.tik')
-                    request.add_header('User-Agent', 'Mozilla/5.0 (Windows NT 6.1; Win64; x64)')
-                    
-                    # Download with retry
-                    for attempt in range(3):
-                        try:
-                            response = urlopen(request).read()
-                            with open(tik_path, 'wb') as f:
-                                f.write(response)
-                            print(f"  ✓ Downloaded disc ticket")
-                            break
-                        except Exception as e:
-                            if attempt < 2:
-                                print(f"  ↻ Retry {attempt + 1}/3...")
-                                time.sleep(2)
-                            else:
-                                raise e
-                except Exception as e:
-                    print(f"  ⚠ Could not download disc ticket: {e}")
-            
-            elif title_key:
-                # Generate fake CETK from encrypted title key
-                print(f"  Generating fake CETK from title key...")
-                print(f"  Note: Fake CETK requires custom firmware to use.")
-                
-                # This is the TIK template from the original script
-                TIKTEM = binascii.a2b_hex(
-                    '00010004d15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11a' +
-                    'd15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed' +
-                    '15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11a' +
-                    'd15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed' +
-                    '15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11a' +
-                    'd15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed15abe11ad15ea5ed' +
-                    '15abe11ad15ea5ed15abe11ad15ea5ed15abe11a0000000000000000' +
-                    '00000000000000000000000000000000000000000000000000000000' +
-                    '00000000000000000000000000000000000000000000000000000000' +
-                    '000000000000000000000000000000526f6f742d4341303030303030' +
-                    '30332d58533030303030303063000000000000000000000000000000' +
-                    '00000000000000000000000000000000000000000000000000feedfa' +
-                    'cefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedf' +
-                    'acefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefee' +
-                    'dfacefeedfacefeedfacefeedface010000ccccccccccccccccccc' +
-                    'cccccccccccccc00000000000000000000000000aaaaaaaaaaaaaa' +
-                    'aa00000000000000000000000000000000000000000000000000000' +
-                    '00000000000000000000000000000000000000000000000000000000' +
-                    '00000000000100000000000000000000000000000000000000000000' +
-                    '00000000000000000000000000000000000000000000000000000000' +
-                    '00000000000000000000000000000000000000000000000000000000' +
-                    '00000000000000000000000000000000000000000000000000000000' +
-                    '0000000000000000010014000000ac000000140001001400000000' +
-                    '000000280000000100000084000000840003000000000000ffffffff' +
-                    'ffffffffffffffffffffffffffffffffffffffffffffffffffffffff' +
-                    '00000000000000000000000000000000000000000000000000000000' +
-                    '00000000000000000000000000000000000000000000000000000000' +
-                    '00000000000000000000000000000000000000000000000000000000' +
-                    '0000000000000000000000000000000000'
-                )
-                TK = 0x140
-                
-                try:
-                    # First download TMD to get title version
-                    tmd_data = download_with_retry(base + '/tmd', bridge=bridge, token=token)
-                    title_version = tmd_data[0x21C:0x21E]  # Title version offset in TMD
-                    
-                    # Create fake tik
-                    tikdata = bytearray(TIKTEM)
-                    tikdata[TK + 0xA6:TK + 0xA8] = title_version
-                    tikdata[TK + 0x9C:TK + 0xA4] = binascii.a2b_hex(tid)
-                    tikdata[TK + 0x7F:TK + 0x8F] = binascii.a2b_hex(title_key)
-                    
-                    with open(tik_path, 'wb') as f:
-                        f.write(tikdata)
-                    
-                    print(f"  ✓ Generated fake CETK")
-                except Exception as e:
-                    print(f"  ⚠ Could not generate fake CETK: {e}")
-            
-            else:
-                print(f"  ⚠ No title key available, skipping CETK")
-                print(f"  ⚠ Decryption may fail without title.tik")
-    
-    # Download TMD
+    # Download TMD first
     if bridge:
         bridge.update(15, "Downloading title metadata...", 0, 0, 0, 0)
     
@@ -726,6 +753,11 @@ def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None,
         if bridge:
             bridge.update(0, f"Failed to download TMD: {e}", 0, 0, 0, 0)
         return ""
+    
+    # Get ticket using FunKiiU logic
+    if not get_ticket_for_title(tid, title_key, tmd_data, game_dir, patch_demo, patch_dlc, False, bridge, token):
+        print(f"⚠ Could not get ticket for title {tid}")
+        print(f"⚠ Decryption will require manual ticket placement")
     
     # Parse TMD to get content list
     contents = []
@@ -771,10 +803,13 @@ def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None,
     cert_path = os.path.join(game_dir, 'title.cert')
     try:
         if titlecert:  # Only write if titlecert is provided
-            cert_data = base64.b64decode(titlecert + '=' * (-len(titlecert) % 4))
+            # PASTE YOUR MAGIC HERE (in binascii format as shown in FunKiiU)
+            MAGIC = binascii.a2b_hex('00010003704138EFBBBDA16A987DD901326D1C9459484C88A2861B91A312587AE70EF6237EC50E1032DC39DDE89A96A8E859D76A98A6E7E36A0CFE352CA893058234FF833FCB3B03811E9F0DC0D9A52F8045B4B2F9411B67A51C44B5EF8CE77BD6D56BA75734A1856DE6D4BED6D3A242C7C8791B3422375E5C779ABF072F7695EFA0F75BCB83789FC30E3FE4CC8392207840638949C7F688565F649B74D63D8D58FFADDA571E9554426B1318FC468983D4C8A5628B06B6FC5D507C13E7A18AC1511EB6D62EA5448F83501447A9AFB3ECC2903C9DD52F922AC9ACDBEF58C6021848D96E208732D3D1D9D9EA440D91621C7A99DB8843C59C1F2E2C7D9B577D512C166D6F7E1AAD4A774A37447E78FE2021E14A95D112A068ADA019F463C7A55685AABB6888B9246483D18B9C806F474918331782344A4B8531334B26303263D9D2EB4F4BB99602B352F6AE4046C69A5E7E8E4A18EF9BC0A2DED61310417012FD824CC116CFB7C4C1F7EC7177A17446CBDE96F3EDD88FCD052F0B888A45FDAF2B631354F40D16E5FA9C2C4EDA98E798D15E6046DC5363F3096B2C607A9D8DD55B1502A6AC7D3CC8D8C575998E7D796910C804C495235057E91ECD2637C9C1845151AC6B9A0490AE3EC6F47740A0DB0BA36D075956CEE7354EA3E9A4F2720B26550C7D394324BC0CB7E9317D8A8661F42191FF10B08256CE3FD25B745E5194906B4D61CB4C2E000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000526F6F7400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001434130303030303030330000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000007BE8EF6CB279C9E2EEE121C6EAF44FF639F88F078B4B77ED9F9560B0358281B50E55AB721115A177703C7A30FE3AE9EF1C60BC1D974676B23A68CC04B198525BC968F11DE2DB50E4D9E7F071E562DAE2092233E9D363F61DD7C19FF3A4A91E8F6553D471DD7B84B9F1B8CE7335F0F5540563A1EAB83963E09BE901011F99546361287020E9CC0DAB487F140D6626A1836D27111F2068DE4772149151CF69C61BA60EF9D949A0F71F5499F2D39AD28C7005348293C431FFBD33F6BCA60DC7195EA2BCC56D200BAF6D06D09C41DB8DE9C720154CA4832B69C08C69CD3B073A0063602F462D338061A5EA6C915CD5623579C3EB64CE44EF586D14BAAA8834019B3EEBEED3790001000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100042EA66C66CFF335797D0497B77A197F9FE51AB5A41375DC73FD9E0B10669B1B9A5B7E8AB28F01B67B6254C14AA1331418F25BA549004C378DD72F0CE63B1F7091AAFE3809B7AC6C2876A61D60516C43A63729162D280BE21BE8E2FE057D8EB6E204242245731AB6FEE30E5335373EEBA970D531BBA2CB222D9684387D5F2A1BF75200CE0656E390CE19135B59E14F0FA5C1281A7386CCD1C8EC3FAD70FBCE74DEEE1FD05F46330B51F9B79E1DDBF4E33F14889D05282924C5F5DC2766EF0627D7EEDC736E67C2E5B93834668072216D1C78B823A072D34FF3ECF9BD11A29AF16C33BD09AFB2D74D534E027C19240D595A68EBB305ACC44AB38AB820C6D426560C000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000526F6F742D43413030303030303033000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000143503030303030303062000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000137A080BA689C590FD0B2F0D4F56B632FB934ED0739517B33A79DE040EE92DC31D37C7F73BF04BD3E44E20AB5A6FEAF5984CC1F6062E9A9FE56C3285DC6F25DDD5D0BF9FE2EFE835DF2634ED937FAB0214D104809CF74B860E6B0483F4CD2DAB2A9602BC56F0D6BD946AED6E0BE4F08F26686BD09EF7DB325F82B18F6AF2ED525BFD828B653FEE6ECE400D5A48FFE22D538BB5335B4153342D4335ACF590D0D30AE2043C7F5AD214FC9C0FE6FA40A5C86506CA6369BCEE44A32D9E695CF00B4FD79ADB568D149C2028A14C9D71B850CA365B37F70B657791FC5D728C4E18FD22557C4062D74771533C70179D3DAE8F92B117E45CB332F3B3C2A22E705CFEC66F6DA3772B000100010000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000010004919EBE464AD0F552CD1B72E7884910CF55A9F02E50789641D896683DC005BD0AEA87079D8AC284C675065F74C8BF37C88044409502A022980BB8AD48383F6D28A79DE39626CCB2B22A0F19E41032F094B39FF0133146DEC8F6C1A9D55CD28D9E1C47B3D11F4F5426C2C780135A2775D3CA679BC7E834F0E0FB58E68860A71330FC95791793C8FBA935A7A6908F229DEE2A0CA6B9B23B12D495A6FE19D0D72648216878605A66538DBF376899905D3445FC5C727A0E13E0E2C8971C9CFA6C60678875732A4E75523D2F562F12AABD1573BF06C94054AEFA81A71417AF9A4A066D0FFC5AD64BAB28B1FF60661F4437D49E1E0D9412EB4BCACF4CFD6A3408847982000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000526F6F742D43413030303030303033000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000158533030303030303063000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000137A0894AD505BB6C67E2E5BDD6A3BEC43D910C772E9CC290DA58588B77DCC11680BB3E29F4EABBB26E98C2601985C041BB14378E689181AAD770568E928A2B98167EE3E10D072BEEF1FA22FA2AA3E13F11E1836A92A4281EF70AAF4E462998221C6FBB9BDD017E6AC590494E9CEA9859CEB2D2A4C1766F2C33912C58F14A803E36FCCDCCCDC13FD7AE77C7A78D997E6ACC35557E0D3E9EB64B43C92F4C50D67A602DEB391B06661CD32880BD64912AF1CBCB7162A06F02565D3B0ECE4FCECDDAE8A4934DB8EE67F3017986221155D131C6C3F09AB1945C206AC70C942B36F49A1183BCD78B6E4B47C6C5CAC0F8D62F897C6953DD12F28B70C5B7DF751819A98346526250001000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000')
+
+            # Write certificate using MAGIC from FunKiiU
             with open(cert_path, 'wb') as f:
-                f.write(zlib.decompress(cert_data))
-            print(f"  ✓ Wrote title.cert")
+                f.write(MAGIC)
+            print(f"  ✓ Wrote title.cert (using FunKiiU MAGIC)")
         else:
             print(f"  ⚠ No titlecert provided, skipping title.cert")
     except Exception as e:
@@ -869,7 +904,7 @@ def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None,
                     printprogress=True,
                     outfile=f,
                     message_prefix='  Progress:',
-                    message_suffix=f'MB',
+                    message_suffix='bytes',
                     bridge=bridge,
                     chunk_callback=callback,
                     token=token,
@@ -909,6 +944,7 @@ def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None,
                         printprogress=True,
                         outfile=f,
                         message_prefix='  Hash:',
+                        message_suffix='bytes',
                         bridge=bridge,
                         token=token,
                         max_retries=2
@@ -937,6 +973,7 @@ def main_with_progress(title_id: str, work_dir: str, provider_root_doc_uri=None,
         print("⚠ Some files failed to download. You may need to retry.")
     
     # Check if we have title.tik
+    tik_path = os.path.join(game_dir, 'title.tik')
     tik_exists = os.path.exists(tik_path) and os.path.getsize(tik_path) > 0
     
     final_result_dir = game_dir
