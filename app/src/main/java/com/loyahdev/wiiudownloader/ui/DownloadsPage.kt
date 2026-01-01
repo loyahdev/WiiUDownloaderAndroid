@@ -250,6 +250,20 @@ fun DownloadsPage(
     val scope = rememberCoroutineScope()
     val viewModel: DownloadsViewModel = viewModel()
 
+    // Animated dots state for decrypt/extract progress
+    var dots by remember { mutableStateOf(1) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(500)
+            dots = (dots % 3) + 1
+        }
+    }
+    val dotsText = when (dots) {
+        1 -> "."
+        2 -> ".."
+        else -> "..."
+    }
+
     // Broadcast receiver for download updates
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
@@ -419,6 +433,42 @@ fun DownloadsPage(
         }
     }
 
+    // Helper to clear unfinished downloads (internal/external work dirs and UI state)
+    fun clearUnfinishedDownloads() {
+        scope.launch {
+            // Cancel any active downloads first
+            val activeIds = viewModel.activeDownloads.keys.toList()
+            activeIds.forEach { cancelDownload(it) }
+
+            // Clear unfinished UI state
+            val unfinishedIds = viewModel.downloadStates
+                .filter { (_, state) -> !state.isComplete }
+                .map { (id, _) -> id }
+            unfinishedIds.forEach { id ->
+                viewModel.downloadStates.remove(id)
+                viewModel.activeDownloads.remove(id)
+            }
+
+            // Delete work dirs
+            withContext(Dispatchers.IO) {
+                try {
+                    // External work dir
+                    File(context.getExternalFilesDir(null), "downloads").deleteRecursively()
+                } catch (_: Throwable) {}
+
+                try {
+                    // Internal files dir
+                    File(context.filesDir, "downloads").deleteRecursively()
+                } catch (_: Throwable) {}
+
+                try {
+                    // Cache dir (if used)
+                    File(context.cacheDir, "downloads").deleteRecursively()
+                } catch (_: Throwable) {}
+            }
+        }
+    }
+
     // Helper function to get status color based on phase
     @Composable
     fun getStatusColor(phase: DownloadPhase): androidx.compose.ui.graphics.Color {
@@ -484,13 +534,25 @@ fun DownloadsPage(
 
                     Spacer(Modifier.height(8.dp))
 
-                    Button(
-                        onClick = { folderPickerLauncher.launch(null) },
-                        modifier = Modifier.fillMaxWidth()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Default.Folder, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(if (viewModel.outputDirUri == null) "Select Folder" else "Change Folder")
+                        Button(
+                            onClick = { folderPickerLauncher.launch(null) },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Folder, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text(if (viewModel.outputDirUri == null) "Select Folder" else "Change Folder")
+                        }
+
+                        OutlinedButton(
+                            onClick = { clearUnfinishedDownloads() },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Clear unfinished")
+                        }
                     }
                 }
             }
@@ -605,129 +667,86 @@ fun DownloadsPage(
                                 if (ui.isRunning) {
                                     Spacer(Modifier.height(12.dp))
 
-                                    // Calculate overall progress
-                                    val overallProgress = when {
-                                        ui.isDecrypting -> ui.decryptionProgress
-                                        ui.isExtracting -> ui.extractionProgress
-                                        else -> ui.progress
-                                    }
-
-                                    // Show current phase
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
-                                    ) {
+                                    if (ui.isDecrypting) {
+                                        // Decryption: simple message with animated dots, no progress system
                                         Text(
-                                            text = "${getPhaseIcon(ui.phase)} ${ui.phase.name.replace('_', ' ')}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = getStatusColor(ui.phase),
-                                            fontWeight = FontWeight.Medium
+                                            text = "Decryption in progress, may take a while$dotsText",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.fillMaxWidth()
                                         )
-
-                                        // Show progress percentage
+                                        Spacer(Modifier.height(8.dp))
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                    } else if (ui.isExtracting) {
+                                        // Extraction: simple message with animated dots, no progress system
                                         Text(
-                                            text = "${(overallProgress * 100).toInt()}%",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.primary
+                                            text = "Extraction in progress, may take a while$dotsText",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.fillMaxWidth()
                                         )
-                                    }
+                                        Spacer(Modifier.height(8.dp))
+                                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                    } else {
+                                        // Normal downloading progress UI
+                                        val overallProgress = ui.progress
 
-                                    Spacer(Modifier.height(8.dp))
-
-                                    // Main progress bar
-                                    LinearProgressIndicator(
-                                        progress = { overallProgress },
-                                        modifier = Modifier.fillMaxWidth(),
-                                        color = getStatusColor(ui.phase)
-                                    )
-
-                                    Spacer(Modifier.height(8.dp))
-
-                                    // Status line
-                                    Text(
-                                        text = ui.status,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        maxLines = 2,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-
-                                    // Download details (files and MB)
-                                    if (ui.totalFiles > 0) {
-                                        Spacer(Modifier.height(4.dp))
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Text(
-                                                text = "File ${ui.currentFile.coerceAtLeast(0)} of ${ui.totalFiles}",
+                                                text = "${getPhaseIcon(ui.phase)} ${ui.phase.name.replace('_', ' ')}",
                                                 style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                                color = getStatusColor(ui.phase),
+                                                fontWeight = FontWeight.Medium
                                             )
-                                            if (ui.totalMB > 0) {
+
+                                            Text(
+                                                text = "${(overallProgress * 100).toInt()}%",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+
+                                        Spacer(Modifier.height(8.dp))
+
+                                        LinearProgressIndicator(
+                                            progress = { overallProgress },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            color = getStatusColor(ui.phase)
+                                        )
+
+                                        Spacer(Modifier.height(8.dp))
+
+                                        Text(
+                                            text = ui.status,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            maxLines = 2,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+
+                                        if (ui.totalFiles > 0) {
+                                            Spacer(Modifier.height(4.dp))
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
                                                 Text(
-                                                    text = "${ui.downloadedMB.toInt()} / ${ui.totalMB.toInt()} MB",
+                                                    text = "File ${ui.currentFile.coerceAtLeast(0)} of ${ui.totalFiles}",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                                                 )
+                                                if (ui.totalMB > 0) {
+                                                    Text(
+                                                        text = "${ui.downloadedMB.toInt()} / ${ui.totalMB.toInt()} MB",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                                                    )
+                                                }
                                             }
                                         }
-                                    }
-
-                                    // Decryption progress (if active)
-                                    if (ui.isDecrypting) {
-                                        Spacer(Modifier.height(8.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "Decryption:",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.secondary,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            Text(
-                                                text = "${(ui.decryptionProgress * 100).toInt()}%",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.secondary
-                                            )
-                                        }
-                                        LinearProgressIndicator(
-                                            progress = { ui.decryptionProgress },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            color = MaterialTheme.colorScheme.secondary,
-                                            trackColor = MaterialTheme.colorScheme.secondaryContainer
-                                        )
-                                    }
-
-                                    // Extraction progress (if active)
-                                    if (ui.isExtracting) {
-                                        Spacer(Modifier.height(8.dp))
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Text(
-                                                text = "Extraction:",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.tertiary,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            Text(
-                                                text = "${(ui.extractionProgress * 100).toInt()}%",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = MaterialTheme.colorScheme.tertiary
-                                            )
-                                        }
-                                        LinearProgressIndicator(
-                                            progress = { ui.extractionProgress },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            color = MaterialTheme.colorScheme.tertiary,
-                                            trackColor = MaterialTheme.colorScheme.tertiaryContainer
-                                        )
                                     }
                                 }
 
