@@ -1,0 +1,689 @@
+package com.loyahdev.wiiudownloader
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import com.chaquo.python.Python
+import com.chaquo.python.android.AndroidPlatform
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
+import java.io.File
+import java.io.FileInputStream
+import android.provider.DocumentsContract
+import android.os.Handler
+import android.os.Looper
+import android.os.Environment
+// Removed DocumentsProvider and related unused imports from MainActivity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
+import android.os.Build
+import android.os.IBinder
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+
+class MainActivity : ComponentActivity() {
+    private var progressReceiver: BroadcastReceiver? = null
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        if (!Python.isStarted()) {
+            Python.start(AndroidPlatform(this))
+        }
+        val vm = ViewModelProvider(this)[DownloaderViewModel::class.java]
+
+        // Receive progress/status updates from the ForegroundService.
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(ctx: Context?, intent: Intent?) {
+                if (intent == null) return
+                if (intent.action != DownloadService.ACTION_PROGRESS) return
+                vm.status = intent.getStringExtra(DownloadService.EXTRA_STATUS) ?: vm.status
+                vm.progressMsg = intent.getStringExtra(DownloadService.EXTRA_MSG)
+                vm.currentFile = intent.getIntExtra(DownloadService.EXTRA_CUR, vm.currentFile)
+                vm.totalFiles = intent.getIntExtra(DownloadService.EXTRA_TOTAL, vm.totalFiles)
+                vm.isRunning = intent.getBooleanExtra(DownloadService.EXTRA_RUNNING, vm.isRunning)
+                vm.resultText = intent.getStringExtra(DownloadService.EXTRA_RESULT) ?: vm.resultText
+                vm.currentTitleId = intent.getStringExtra(DownloadService.EXTRA_TITLE) ?: vm.currentTitleId
+            }
+        }
+        val filter = IntentFilter(DownloadService.ACTION_PROGRESS)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(receiver, filter)
+        }
+        progressReceiver = receiver
+
+        setContent {
+            MaterialTheme {
+                Step3SimpleUi(vm)
+            }
+        }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        progressReceiver?.let {
+            try { unregisterReceiver(it) } catch (_: Throwable) {}
+        }
+        progressReceiver = null
+    }
+}
+
+@Composable
+fun Step3SimpleUi(vm: DownloaderViewModel) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    // App-specific external "Downloads" (visible via our DocumentsProvider and many file managers).
+    // Typical path: /sdcard/Android/data/<package>/files/Download/work
+    val externalBase = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
+    if (externalBase == null) {
+        Surface(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("External storage not available on this device.")
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("This app is configured to not use internal storage.")
+            }
+        }
+        return
+    }
+
+    val workDir = remember { File(externalBase, "work") }
+
+    var showCancelConfirm by remember { mutableStateOf(false) }
+    var outputDirUri by remember { mutableStateOf<Uri?>(null) }
+    var deleteAfterCopy by remember { mutableStateOf(true) }
+
+    // Folder picker (user selects an output directory)
+    val pickOutputDirLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri == null) {
+            vm.status = "No folder selected"
+            return@rememberLauncherForActivityResult
+        }
+
+        // Persist read/write access across app restarts
+        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try {
+            context.contentResolver.takePersistableUriPermission(uri, flags)
+            outputDirUri = uri
+            vm.status = "Output folder selected"
+        } catch (e: SecurityException) {
+            // Some providers don't allow persistable permissions; still keep the URI for this session.
+            outputDirUri = uri
+            vm.status = "Selected folder (permission not persisted)"
+        }
+    }
+
+    Surface(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Button(
+                onClick = {
+                    // Launch system folder picker (user will approve access).
+                    pickOutputDirLauncher.launch(null)
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (outputDirUri == null) "Choose output folder" else "Change output folder")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("Delete from work folder after copy")
+                Switch(
+                    checked = deleteAfterCopy,
+                    onCheckedChange = { deleteAfterCopy = it }
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        try {
+                            val deleted = withContext(Dispatchers.IO) {
+                                if (workDir.exists()) {
+                                    workDir.deleteRecursively()
+                                } else {
+                                    false
+                                }
+                            }
+                            vm.status = if (deleted) {
+                                "Cleared app work folder"
+                            } else {
+                                "Work folder already empty"
+                            }
+                            vm.resultText = "Work folder: ${workDir.absolutePath}"
+                            vm.progressMsg = null
+                            vm.currentFile = 0
+                            vm.totalFiles = 0
+                        } catch (t: Throwable) {
+                            vm.status = "Error"
+                            vm.resultText = "Failed to clear work folder: ${t.message ?: t.javaClass.simpleName}"
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Clear unfinished downloads")
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            if (vm.isRunning) {
+                Button(
+                    onClick = { showCancelConfirm = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Cancel")
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
+            if (showCancelConfirm) {
+                AlertDialog(
+                    onDismissRequest = { showCancelConfirm = false },
+                    title = { Text("Cancel download?") },
+                    text = { Text("This will cancel and delete the partially downloaded files.") },
+                    confirmButton = {
+                        TextButton(
+                            onClick = {
+                                showCancelConfirm = false
+                                val intent = Intent(context, DownloadService::class.java).apply {
+                                    action = DownloadService.ACTION_CANCEL
+                                }
+                                context.startService(intent)
+                                vm.status = "Cancelling…"
+                                vm.resultText = "Cancelling and cleaning up…"
+                            }
+                        ) { Text("Cancel download") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showCancelConfirm = false }) { Text("Keep downloading") }
+                    }
+                )
+            }
+
+            Button(
+                onClick = {
+                    if (outputDirUri == null) {
+                        vm.status = "Pick an output folder first"
+                        return@Button
+                    }
+
+                    // Reset UI state
+                    vm.status = "Starting…"
+                    vm.progressMsg = null
+                    vm.currentFile = 0
+                    vm.totalFiles = 0
+                    vm.resultText = null
+
+                    val titleId = "0005000010146000" // TODO: make user-selectable later
+                    vm.currentTitleId = titleId
+
+                    workDir.mkdirs()
+
+                    val intent = Intent(context, DownloadService::class.java).apply {
+                        action = DownloadService.ACTION_START
+                        putExtra(DownloadService.EXTRA_TITLE, titleId)
+                        putExtra(DownloadService.EXTRA_WORK_DIR, workDir.absolutePath)
+                        putExtra(DownloadService.EXTRA_OUTPUT_TREE, outputDirUri.toString())
+                        putExtra(DownloadService.EXTRA_DELETE_AFTER_COPY, deleteAfterCopy)
+                    }
+
+                    if (Build.VERSION.SDK_INT >= 26) {
+                        context.startForegroundService(intent)
+                    } else {
+                        context.startService(intent)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = outputDirUri != null && !vm.isRunning
+            ) {
+                Text("Import / Start")
+            }
+
+            if (vm.isRunning) {
+                Spacer(modifier = Modifier.height(12.dp))
+                val derivedProgress = if (vm.totalFiles > 0) {
+                    (vm.currentFile.coerceAtLeast(0).toFloat() / vm.totalFiles.toFloat()).coerceIn(0f, 1f)
+                } else 0f
+                LinearProgressIndicator(
+                    progress = { derivedProgress },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (vm.progressMsg != null) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = vm.progressMsg!!,
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                if (vm.totalFiles > 0) {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Files: ${vm.currentFile.coerceAtLeast(0)}/${vm.totalFiles}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text(
+                text = "Output: ${outputDirUri?.toString() ?: "(not selected)"}",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Status: ${vm.status}",
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            if (vm.resultText != null) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Surface(
+                    tonalElevation = 2.dp,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = vm.resultText!!,
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun copyLocalFileToSafDir(
+    context: android.content.Context,
+    treeUri: Uri,
+    parentDirDocUri: Uri,
+    displayName: String,
+    mimeType: String,
+    sourceFile: File
+): Uri {
+    // Always create the child under a *document* URI which belongs to the same tree.
+    val created = DocumentsContract.createDocument(
+        context.contentResolver,
+        parentDirDocUri,
+        mimeType,
+        displayName
+    ) ?: throw IllegalStateException("Failed to create destination file")
+
+    // Convert to a tree-based document URI to keep subsequent operations scoped correctly.
+    val createdDocId = DocumentsContract.getDocumentId(created)
+    val createdInTree = DocumentsContract.buildDocumentUriUsingTree(treeUri, createdDocId)
+
+    context.contentResolver.openOutputStream(createdInTree)?.use { out ->
+        FileInputStream(sourceFile).use { input ->
+            val buffer = ByteArray(1024 * 64)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                out.write(buffer, 0, read)
+            }
+            out.flush()
+        }
+    } ?: throw IllegalStateException("Failed to open SAF output stream")
+
+    return createdInTree
+}
+
+class ProgressBridge(private val onUpdate: (Int, String, Int, Int) -> Unit) {
+    private val handler = Handler(Looper.getMainLooper())
+
+    // Called from Python thread.
+    fun update(percent: Int, message: String, currentFile: Int, totalFiles: Int) {
+        handler.post {
+            onUpdate(percent, message, currentFile, totalFiles)
+        }
+    }
+}
+
+class CancelToken {
+    @Volatile private var cancelled: Boolean = false
+
+    fun cancel() { cancelled = true }
+    fun reset() { cancelled = false }
+
+    // Called from Python: `token.is_cancelled()`
+    fun is_cancelled(): Boolean = cancelled
+}
+
+
+private fun createSafDirectory(
+    context: android.content.Context,
+    treeUri: Uri,
+    parentDirDocUri: Uri,
+    dirName: String
+): Uri {
+    val created = DocumentsContract.createDocument(
+        context.contentResolver,
+        parentDirDocUri,
+        DocumentsContract.Document.MIME_TYPE_DIR,
+        dirName
+    ) ?: throw IllegalStateException("Failed to create directory: $dirName")
+
+    // Convert to a tree-based document URI.
+    val createdDocId = DocumentsContract.getDocumentId(created)
+    return DocumentsContract.buildDocumentUriUsingTree(treeUri, createdDocId)
+}
+
+private fun copyLocalDirToSafDir(
+    context: android.content.Context,
+    destParentTreeUri: Uri,
+    sourceDir: File
+): Uri {
+    if (!sourceDir.exists() || !sourceDir.isDirectory) {
+        throw IllegalArgumentException("sourceDir is not a directory: ${sourceDir.absolutePath}")
+    }
+
+    // Convert the picked tree URI into the corresponding parent *document* URI.
+    val destParentDocUri = if (DocumentsContract.isTreeUri(destParentTreeUri)) {
+        DocumentsContract.buildDocumentUriUsingTree(
+            destParentTreeUri,
+            DocumentsContract.getTreeDocumentId(destParentTreeUri)
+        )
+    } else {
+        destParentTreeUri
+    }
+
+    // Create the top-level folder with the same name as the source directory.
+    val destRootDirUri = createSafDirectory(
+        context = context,
+        treeUri = destParentTreeUri,
+        parentDirDocUri = destParentDocUri,
+        dirName = sourceDir.name
+    )
+
+    fun recurse(src: File, destDirDocUri: Uri) {
+        val children = src.listFiles() ?: return
+        for (child in children) {
+            if (child.isDirectory) {
+                val childDestDirUri = createSafDirectory(
+                    context = context,
+                    treeUri = destParentTreeUri,
+                    parentDirDocUri = destDirDocUri,
+                    dirName = child.name
+                )
+                recurse(child, childDestDirUri)
+            } else {
+                copyLocalFileToSafDir(
+                    context = context,
+                    treeUri = destParentTreeUri,
+                    parentDirDocUri = destDirDocUri,
+                    displayName = child.name,
+                    mimeType = "application/octet-stream",
+                    sourceFile = child
+                )
+            }
+        }
+    }
+
+    recurse(sourceDir, destRootDirUri)
+    return destRootDirUri
+}
+
+class DownloaderViewModel : ViewModel() {
+    var isRunning by mutableStateOf(false)
+    var currentTitleId by mutableStateOf<String?>(null)
+    var status by mutableStateOf("Idle")
+    var resultText by mutableStateOf<String?>(null)
+    var progressMsg by mutableStateOf<String?>(null)
+    var currentFile by mutableStateOf(0)
+    var totalFiles by mutableStateOf(0)
+}
+
+class DownloadService : Service() {
+
+    companion object {
+        const val ACTION_START = "com.loyahdev.wiiudownloader.action.START"
+        const val ACTION_CANCEL = "com.loyahdev.wiiudownloader.action.CANCEL"
+        const val ACTION_PROGRESS = "com.loyahdev.wiiudownloader.action.PROGRESS"
+
+        const val EXTRA_TITLE = "extra_title"
+        const val EXTRA_WORK_DIR = "extra_work_dir"
+        const val EXTRA_OUTPUT_TREE = "extra_output_tree"
+        const val EXTRA_DELETE_AFTER_COPY = "extra_delete_after_copy"
+
+        const val EXTRA_STATUS = "extra_status"
+        const val EXTRA_MSG = "extra_msg"
+        const val EXTRA_CUR = "extra_cur"
+        const val EXTRA_TOTAL = "extra_total"
+        const val EXTRA_RUNNING = "extra_running"
+        const val EXTRA_RESULT = "extra_result"
+
+        private const val NOTIF_CHANNEL_ID = "download_channel"
+        private const val NOTIF_ID = 1001
+    }
+
+    private val cancelToken = CancelToken()
+    private var job: Job? = null
+
+    override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        ensureChannel()
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        when (intent?.action) {
+            ACTION_START -> {
+                if (job != null) return START_STICKY
+                cancelToken.reset()
+
+                val titleId = intent.getStringExtra(EXTRA_TITLE) ?: return START_NOT_STICKY
+                val workDirPath = intent.getStringExtra(EXTRA_WORK_DIR) ?: return START_NOT_STICKY
+                val outputTree = intent.getStringExtra(EXTRA_OUTPUT_TREE) ?: return START_NOT_STICKY
+                val deleteAfterCopy = intent.getBooleanExtra(EXTRA_DELETE_AFTER_COPY, true)
+
+                startForeground(NOTIF_ID, buildNotif("Starting…", 0, 0))
+                sendProgress(titleId, true, "Starting…", null, 0, 0, null)
+
+                job = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                    runDownload(titleId, workDirPath, outputTree, deleteAfterCopy)
+                }
+            }
+            ACTION_CANCEL -> {
+                cancelToken.cancel()
+                job?.cancel()
+            }
+        }
+        return START_STICKY
+    }
+
+    private suspend fun runDownload(
+        titleId: String,
+        workDirPath: String,
+        outputTreeUriStr: String,
+        deleteAfterCopy: Boolean
+    ) {
+        try {
+            val workDir = File(workDirPath)
+            workDir.mkdirs()
+
+            // ProgressBridge -> broadcasts to UI and updates notification.
+            val bridge = ProgressBridge { _pct, msg, cur, total ->
+                val notif = buildNotif(msg.ifBlank { "Downloading…" }, cur, total)
+                val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+                nm.notify(NOTIF_ID, notif)
+                sendProgress(titleId, true, "Running", msg, cur, total, null)
+            }
+
+            if (!Python.isStarted()) {
+                Python.start(AndroidPlatform(this))
+            }
+
+            val py = Python.getInstance()
+            val mod = py.getModule("runner")
+
+            // providerRootDocUri passed for compatibility (can be ignored by Python).
+            val providerAuthority = "${packageName}.workdocuments"
+            val providerRootDocUri = DocumentsContract.buildDocumentUri(providerAuthority, "work_root:").toString()
+
+            val pythonReturn = mod.callAttr(
+                "main_with_progress",
+                titleId,
+                workDir.absolutePath,
+                providerRootDocUri,
+                bridge,
+                cancelToken
+            ).toString()
+
+            if (cancelToken.is_cancelled()) {
+                // Cleanup partial title folder
+                File(workDir, titleId).deleteRecursively()
+                sendProgress(titleId, false, "Cancelled", "Cancelled", 0, 0, "Cancelled")
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+                return
+            }
+
+            val preferredTitleDir = File(workDir, titleId)
+            val returnedDir = File(pythonReturn).let { returned ->
+                when {
+                    returned.isAbsolute -> returned
+                    pythonReturn.isNotBlank() -> File(workDir, pythonReturn)
+                    else -> preferredTitleDir
+                }
+            }
+
+            val localDir = when {
+                returnedDir.exists() && returnedDir.isDirectory && returnedDir.name.equals(titleId, ignoreCase = true) -> returnedDir
+                preferredTitleDir.exists() && preferredTitleDir.isDirectory -> preferredTitleDir
+                else -> throw IllegalStateException("Output folder not found. Expected ${preferredTitleDir.absolutePath}. Python returned ${returnedDir.absolutePath}.")
+            }
+
+            val outputTreeUri = Uri.parse(outputTreeUriStr)
+
+            // Copy into user-selected destination
+            val destUri = copyLocalDirToSafDir(
+                context = this,
+                destParentTreeUri = outputTreeUri,
+                sourceDir = localDir
+            )
+
+            // Optionally delete from work folder
+            if (deleteAfterCopy) {
+                localDir.deleteRecursively()
+                if (workDir.exists() && (workDir.listFiles()?.isEmpty() == true)) {
+                    workDir.delete()
+                }
+            }
+
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NOTIF_ID, buildNotif("Done", 1, 1))
+
+            sendProgress(titleId, false, "Done", "Copied to $destUri", 1, 1, "Copied folder ${localDir.name} to $destUri")
+        } catch (t: Throwable) {
+            sendProgress(titleId, false, "Error", t.message ?: t.javaClass.simpleName, 0, 0, t.message ?: t.javaClass.simpleName)
+        } finally {
+            // Always unlock the UI even if we exit unexpectedly.
+            try {
+                sendProgress(titleId, false, "Idle", null, 0, 0, null)
+            } catch (_: Throwable) {}
+
+            job = null
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
+    private fun sendProgress(
+        titleId: String,
+        running: Boolean,
+        status: String,
+        msg: String?,
+        cur: Int,
+        total: Int,
+        result: String?
+    ) {
+        val i = Intent(ACTION_PROGRESS).apply {
+            setPackage(packageName)
+            putExtra(EXTRA_TITLE, titleId)
+            putExtra(EXTRA_RUNNING, running)
+            putExtra(EXTRA_STATUS, status)
+            putExtra(EXTRA_MSG, msg)
+            putExtra(EXTRA_CUR, cur)
+            putExtra(EXTRA_TOTAL, total)
+            putExtra(EXTRA_RESULT, result)
+        }
+        sendBroadcast(i)
+    }
+
+    private fun ensureChannel() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val nm = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            val ch = NotificationChannel(
+                NOTIF_CHANNEL_ID,
+                "Downloads",
+                NotificationManager.IMPORTANCE_LOW
+            )
+            nm.createNotificationChannel(ch)
+        }
+    }
+
+    private fun buildNotif(text: String, cur: Int, total: Int): Notification {
+        val progress = if (total > 0) ((cur.toFloat() / total.toFloat()) * 100).toInt().coerceIn(0, 100) else 0
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            Notification.Builder(this, NOTIF_CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(this)
+        }
+
+        return builder
+            .setContentTitle("WiiUDownloader")
+            .setContentText(text)
+            .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setOngoing(true)
+            .setProgress(100, progress, total == 0)
+            .build()
+    }
+}

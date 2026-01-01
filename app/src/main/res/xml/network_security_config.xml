@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">nus.cdn.wup.shop.nintendo.net</domain>
+        <domain includeSubdomains="true">ccs.cdn.wup.shop.nintendo.net</domain>
+    </domain-config>
+</network-security-config>
