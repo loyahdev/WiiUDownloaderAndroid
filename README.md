@@ -3,7 +3,7 @@ An experimental port of the popular WiiUDownloader to Android devices for use wi
 
 WiiUDownloader is a Kotlin Android app that allows you to download Wii U games from Nintendo's servers. It has an easy to use GUI to browse and download Wii U titles and save them to a location of your choice. It also supports on device decryption and extraction to be used with popular emulators or on a Wii U console.
 
-To download and decrypt titles, the app uses python and chaquopy with publicly availble code that was modified heavily to work within the app.
+To download and decrypt titles, the app uses python and chaquopy with publicly availble code that was modified heavily to work within the app. As well WiiUDownloaderAndroid has basic support for background downloading but I wouldn't rely on it for the sake of data loss.
 
 ## Features
 
@@ -29,7 +29,7 @@ To install WiiUDownloader Android, download the the APK File in releases tab:
 6. In the Queue tab click the down arrow icon to move the game to the Downloads page with a max of 1 at a time.
 7. When you are directed to the Downloads tab click the "Select Folder" button and choose where you want your title to be stored. (Usually in a Roms directory of choice)
 8. Click the "Download" button beside your title and the download progress is shown below until it finishes and automatically decrypts for emulator use.
-9. When a title fully completes, you can open the Files app and see the new Title ID folder at the location you selected. Which when set as a directory location in Cemu, it will register as a playable title and you've now successfully used WiiUDownloader!
+9. When a title fully completes, you can open the Files app and see the new Title ID folder at the location you selected. Which when set as a directory location in Cemu, it will register as a playable title and you've now successfully used WiiUDownloaderAndroid!
 
 >[!NOTE]
 >All limits on max download are just limitations of Android's Python bridging and as far as I could make possible within the app.
