@@ -5,6 +5,9 @@ WiiUDownloader is a Kotlin Android app that allows you to download Wii U games f
 
 To download and decrypt titles, the app uses python and chaquopy with publicly availble code that was modified heavily to work within the app. As well WiiUDownloaderAndroid has basic support for background downloading but I wouldn't rely on it for the sake of data loss.
 
+>[!WARNING]
+>This will be a lot slower than using the desktop WiiUDownloader software. Lots of this is down to Androids compatibility but later on I can hopefully improve the speed of downloads.
+
 ## Features
 
 - Browse and search for Wii U games, updates, DLC, demos, and more.
